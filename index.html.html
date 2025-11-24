@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>今天吃什麼？美味輪盤</title>
+    <style>
+        /* --- CSS 樣式區 --- */
+        :root {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --text-primary: #ffffff;
+            --accent-color: #00E676; /* 螢光綠按鈕 */
+            --accent-hover: #00C853;
+            --wheel-border: #333;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        h1 {
+            margin-bottom: 1rem;
+            font-weight: 300;
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px rgba(255,255,255,0.2);
+        }
+
+        /* 輪盤容器 */
+        .wheel-wrapper {
+            position: relative;
+            width: 340px;
+            height: 340px;
+            margin-bottom: 20px;
+            filter: drop-shadow(0 0 15px rgba(0,0,0,0.5));
+        }
+
+        /* 指針 */
+        .pointer {
+            position: absolute;
+            top: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 20px solid transparent;
+            border-right: 20px solid transparent;
+            border-top: 40px solid #FF4081; /* 醒目的粉紅色指針 */
+            z-index: 10;
+            filter: drop-shadow(0 4px 4px rgba(0,0,0,0.4));
+        }
+
+        canvas {
+            border-radius: 50%;
+            border: 4px solid var(--wheel-border);
+            transition: transform 4s cubic-bezier(0.2, 0.8, 0.2, 0.99); /* 緩動旋轉效果 */
+            width: 100%;
+            height: 100%;
+        }
+
+        /* 操作區 */
+        .controls {
+            text-align: center;
+            z-index: 5;
+        }
+
+        /* 開始按鈕 */
+        button#spinBtn {
+            background-color: var(--accent-color);
+            color: #000;
+            border: none;
+            padding: 16px 48px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(0, 230, 118, 0.4);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button#spinBtn:hover {
+            background-color: var(--accent-hover);
+            transform: scale(1.05);
+            box-shadow: 0 0 30px rgba(0, 230, 118, 0.6);
+        }
+
+        button#spinBtn:active {
+            transform: scale(0.95);
+        }
+
+        button:disabled {
+            background-color: #555;
+            color: #888;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        /* 結果顯示與地圖按鈕 */
+        #result-container {
+            margin-top: 20px;
+            height: 80px; /* 固定高度防止跳動 */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.5s;
+        }
+
+        .result-text {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #FF4081;
+            margin-bottom: 10px;
+        }
+
+        .map-link {
+            text-decoration: none;
+            background-color: #2196F3; /* Google Blue */
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.3s;
+        }
+
+        .map-link:hover {
+            background-color: #1976D2;
+        }
+
+        /* 手機版適配 */
+        @media (max-width: 400px) {
+            .wheel-wrapper {
+                width: 300px;
+                height: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🤔 今天吃什麼？</h1>
+
+    <div class="wheel-wrapper">
+        <div class="pointer"></div>
+        <canvas id="wheel" width="500" height="500"></canvas>
+    </div>
+
+    <div class="controls">
+        <button id="spinBtn" onclick="spin()">開始決定！</button>
+    </div>
+
+    <div id="result-container">
+        <div class="result-text" id="resultText"></div>
+        <a href="#" target="_blank" class="map-link" id="mapBtn">
+            📍 搜尋附近的餐廳
+        </a>
+    </div>
+
+    <script>
+        /* --- JavaScript 邏輯區 --- */
+        const canvas = document.getElementById('wheel');
+        const ctx = canvas.getContext('2d');
+        const spinBtn = document.getElementById('spinBtn');
+        const resultContainer = document.getElementById('result-container');
+        const resultText = document.getElementById('resultText');
+        const mapBtn = document.getElementById('mapBtn');
+
+        const foods = [
+            "披薩", "壽司", "三明治", "沙拉", "塔可餅", "麵條", 
+            "燒烤", "海鮮", "熟食", "咖啡廳", "麵包店", "中餐", 
+            "義大利菜", "印度菜", "泰國菜", "素食", 
+            "炸雞", "韓式料理", "火鍋", "漢堡", "義大利麵"
+        ];
+
+        // 深色模式適配的配色 (稍微粉嫩一點以對比深色背景)
+        const colors = [
+            "#FF6B6B", "#4ECDC4", "#FFE66D", "#1A535C", "#FF9F1C", 
+            "#2EC4B6", "#E71D36", "#7209B7", "#F72585", "#4361EE"
+        ];
+
+        const size = 500;
+        const center = size / 2;
+        const radius = size / 2 - 10; // 留一點邊框空間
+        const step = (2 * Math.PI) / foods.length;
+        
+        let currentRotation = 0;
+
+        // 1. 繪製輪盤
+        function drawWheel() {
+            ctx.clearRect(0, 0, size, size);
+            
+            foods.forEach((food, i) => {
+                const startAngle = i * step;
+                const endAngle = (i + 1) * step;
+                
+                // 畫扇形
+                ctx.beginPath();
+                ctx.moveTo(center, center);
+                ctx.arc(center, center, radius, startAngle, endAngle);
+                ctx.fillStyle = colors[i % colors.length];
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = "#1e1e1e"; // 分隔線顏色跟背景一樣
+                ctx.stroke();
+
+                // 畫文字
+                ctx.save();
+                ctx.translate(center, center);
+                ctx.rotate(startAngle + step / 2);
+                ctx.textAlign = "right";
+                ctx.fillStyle = "#fff";
+                ctx.font = "bold 26px 'Microsoft JhengHei'";
+                ctx.shadowColor = "rgba(0,0,0,0.5)";
+                ctx.shadowBlur = 4;
+                ctx.fillText(food, radius - 30, 10);
+                ctx.restore();
+            });
+        }
+
+        // 初始化繪製
+        drawWheel();
+
+        // 2. 旋轉邏輯
+        function spin() {
+            // 重置狀態
+            spinBtn.disabled = true;
+            spinBtn.style.opacity = "0.5";
+            resultContainer.style.opacity = "0";
+            
+            // 計算旋轉角度：至少轉 5 圈 (1800度) + 隨機角度
+            const randomDeg = Math.floor(1800 + Math.random() * 1800);
+            currentRotation += randomDeg;
+            
+            // 套用 CSS 旋轉動畫
+            canvas.style.transform = `rotate(${currentRotation}deg)`;
+
+            // 3. 計算結果 (等待動畫時間 4秒後執行)
+            setTimeout(() => {
+                showResult();
+                spinBtn.disabled = false;
+                spinBtn.style.opacity = "1";
+            }, 4000); // 必須配合 CSS 的 transition 4s
+        }
+
+        // 4. 顯示結果與生成地圖連結
+        function showResult() {
+            // 計算最終指針指到的項目
+            // 輪盤是順時針轉，Canvas 0度在右邊(3點鐘)，指針在上方(12點鐘/-90度)
+            // 數學轉換邏輯：
+            const actualRotation = currentRotation % 360;
+            // 指針在上方，相當於輪盤逆時針轉了 (360 - actualRotation)
+            // 加上 270度 (或 -90度) 的偏移量讓 0度 對齊指針
+            const pointerAngle = (360 - actualRotation + 270) % 360;
+            
+            const index = Math.floor(pointerAngle / (360 / foods.length));
+            const selectedFood = foods[index];
+
+            // 更新文字
+            resultText.innerHTML = `🎉 吃 <span style="color:${colors[index % colors.length]}">${selectedFood}</span> 吧！`;
+            
+            // 生成 Google Maps 搜尋連結
+            // 格式：https://www.google.com/maps/search/關鍵字+附近
+            const query = encodeURIComponent(`${selectedFood} 附近`);
+            mapBtn.href = `https://www.google.com/maps/search/${query}`;
+            mapBtn.innerHTML = `📍 在地圖上找附近的${selectedFood}`;
+
+            // 顯示結果區塊
+            resultContainer.style.opacity = "1";
+        }
+    </script>
+</body>
+</html>
